@@ -1,36 +1,42 @@
-import {App, PluginSettingTab, Setting} from "obsidian";
-import MyPlugin from "./main";
+import { App, PluginSettingTab, Setting } from "obsidian";
+import type HabitTrackerPlugin from "./main";
 
-export interface MyPluginSettings {
-	mySetting: string;
+export interface HabitTrackerSettings {
+	/** Folder path where daily notes are stored (relative to vault root) */
+	dailyNotesFolder: string;
 }
 
-export const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
+const DEFAULT_DAILY_NOTES_FOLDER = "Personal/Journal";
 
-export class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+export const DEFAULT_SETTINGS: HabitTrackerSettings = {
+	dailyNotesFolder: DEFAULT_DAILY_NOTES_FOLDER,
+};
 
-	constructor(app: App, plugin: MyPlugin) {
+export class HabitTrackerSettingTab extends PluginSettingTab {
+	plugin: HabitTrackerPlugin;
+
+	constructor(app: App, plugin: HabitTrackerPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
 	display(): void {
-		const {containerEl} = this;
-
+		const { containerEl } = this;
 		containerEl.empty();
 
+		containerEl.createEl("h2", { text: "Habit Tracker settings" });
+
 		new Setting(containerEl)
-			.setName('Settings #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
+			.setName("Daily notes folder")
+			.setDesc("The folder path where your daily notes are stored (e.g. \"Personal/Journal\").")
+			.addText(text =>
+				text
+					.setPlaceholder(DEFAULT_DAILY_NOTES_FOLDER)
+					.setValue(this.plugin.settings.dailyNotesFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.dailyNotesFolder = value;
+						await this.plugin.saveSettings();
+					})
+			);
 	}
 }

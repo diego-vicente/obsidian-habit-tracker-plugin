@@ -1,99 +1,96 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import { MarkdownPostProcessorContext, Plugin, TFile } from "obsidian";
+import { DEFAULT_SETTINGS, HabitTrackerSettings, HabitTrackerSettingTab } from "./settings";
+import { CODE_BLOCK_LANGUAGE } from "./types";
+import { parseDailyHabitData, createEmptyDailyData } from "./parser";
+import { extractDateFromFilename } from "./habits";
+import { renderHabitTracker } from "./renderer";
 
-// Remember to rename these classes and interfaces!
-
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class HabitTrackerPlugin extends Plugin {
+	settings: HabitTrackerSettings;
 
 	async onload() {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
+		// Register the code block processor for ```dvicente-habit-tracker blocks
+		this.registerMarkdownCodeBlockProcessor(
+			CODE_BLOCK_LANGUAGE,
+			(source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
+				this.processHabitTrackerBlock(source, el, ctx);
+			},
+		);
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
-
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			}
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-
+		// Settings tab
+		this.addSettingTab(new HabitTrackerSettingTab(this.app, this));
 	}
 
 	onunload() {
+		// Nothing to clean up -- registerMarkdownCodeBlockProcessor is
+		// automatically unregistered by the Plugin base class.
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			await this.loadData() as Partial<HabitTrackerSettings>,
+		);
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
+
+	// -- Code block processing --
+
+	private processHabitTrackerBlock(
+		source: string,
+		el: HTMLElement,
+		ctx: MarkdownPostProcessorContext,
+	): void {
+		const file = this.resolveSourceFile(ctx);
+		const date = this.resolveDateFromContext(ctx, file);
+
+		// Parse existing data, or create empty data for this date
+		const data = parseDailyHabitData(source) ?? createEmptyDailyData(date);
+
+		renderHabitTracker(data, el, this.app, file, this.settings);
+	}
+
+	/**
+	 * Resolve the TFile for the note containing the code block.
+	 */
+	private resolveSourceFile(ctx: MarkdownPostProcessorContext): TFile | null {
+		const sourcePath = ctx.sourcePath;
+		const abstractFile = this.app.vault.getAbstractFileByPath(sourcePath);
+		return abstractFile instanceof TFile ? abstractFile : null;
+	}
+
+	/**
+	 * Determine the date for this habit tracker block.
+	 * Tries to extract it from the daily note filename (YYYY-MM-DD.md),
+	 * then from parsed data, and falls back to today.
+	 */
+	private resolveDateFromContext(
+		ctx: MarkdownPostProcessorContext,
+		file: TFile | null,
+	): string {
+		// Try extracting from the filename (daily note convention)
+		if (file) {
+			const dateFromName = extractDateFromFilename(file.name);
+			if (dateFromName !== null) {
+				return dateFromName;
+			}
+		}
+
+		// Fallback: use today's date
+		return todayISO();
+	}
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
+function todayISO(): string {
+	const now = new Date();
+	const year = now.getFullYear();
+	const month = String(now.getMonth() + 1).padStart(2, "0");
+	const day = String(now.getDate()).padStart(2, "0");
+	return `${year}-${month}-${day}`;
 }
