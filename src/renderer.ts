@@ -7,7 +7,7 @@ import { discoverHabits, getActiveHabits, groupBySection } from "./habits";
 import { SectionEditorModal } from "./section-editor";
 import { writeDataToFile } from "./file-utils";
 import { HabitDetailModal } from "./modal";
-import { scanHistory, getHabitProgress, generateDateRange, toISODate } from "./history";
+import { scanHistory, getHabitProgress, getHabitRawValue, valueToLevel, generateDateRange, toISODate } from "./history";
 
 const MIN_VALUE = 0;
 const STEP = 1;
@@ -341,8 +341,6 @@ function setupDragToAdjust(
 // Heatmap view (GitHub-style contribution graph per habit)
 // ============================================================
 
-/** Number of progress levels for the heatmap color scale (0 = empty, 1–10 = accent hues) */
-const HEATMAP_LEVELS = 10;
 const DAYS_PER_WEEK = 7;
 
 /** Cell size (12px) + gap (2px) = pixels per grid column */
@@ -411,38 +409,49 @@ function renderHabitHeatmap(
 	const dates = generateDateRange(currentDate, maxColumns);
 	const today = toISODate(new Date());
 
+	// First pass: collect raw values for visible dates to find the maximum
+	const dateValues: { date: string; isActive: boolean; rawValue: number | null | undefined }[] = [];
+	let peakValue = 0;
+
+	for (const date of dates) {
+		if (date > today) {
+			dateValues.push({ date, isActive: false, rawValue: undefined });
+			continue;
+		}
+		const isActive = date >= habit.startDate && (habit.endDate === null || date <= habit.endDate);
+		const rawValue = isActive
+			? getHabitRawValue(allData, habit.name, date)
+			: undefined;
+
+		if (typeof rawValue === "number" && rawValue > peakValue) {
+			peakValue = rawValue;
+		}
+		dateValues.push({ date, isActive, rawValue });
+	}
+
 	// Grid: 7 rows (Mon–Sun) × N columns (weeks)
 	const grid = block.createDiv({ cls: "habit-tracker-heatmap-grid" });
 	const totalColumns = Math.ceil(dates.length / DAYS_PER_WEEK);
 	grid.style.setProperty("--heatmap-columns", String(totalColumns));
 
-	for (const date of dates) {
+	// Second pass: render cells using quartile levels based on peak value
+	for (const { date, isActive, rawValue } of dateValues) {
 		const isFuture = date > today;
 
 		if (isFuture) {
-			// Future dates are invisible placeholders to keep the grid aligned
 			grid.createDiv({ cls: "habit-tracker-heatmap-cell future" });
 			continue;
 		}
 
-		const isActive = date >= habit.startDate && (habit.endDate === null || date <= habit.endDate);
-		const progress = isActive
-			? getHabitProgress(allData, habit.name, habit.target, date)
-			: undefined;
-
 		let cls = "habit-tracker-heatmap-cell";
 		if (!isActive) {
-			// Outside habit range — show as neutral grey square
 			cls += " no-note";
-		} else if (progress === undefined) {
-			// No daily note for this date
+		} else if (rawValue === undefined) {
 			cls += " no-note";
-		} else if (progress === null || progress === 0) {
-			// Daily note exists but no entry or zero progress
+		} else if (rawValue === null || rawValue === 0) {
 			cls += " empty";
 		} else {
-			// Has progress: map 1–100 to level 1–10
-			const level = Math.min(HEATMAP_LEVELS, Math.max(1, Math.ceil(progress / HEATMAP_LEVELS)));
+			const level = valueToLevel(rawValue, peakValue, habit.target);
 			cls += ` level-${level}`;
 		}
 
@@ -455,14 +464,15 @@ function renderHabitHeatmap(
 		let tooltip: string;
 		if (!isActive) {
 			tooltip = `${formattedDate}: not active`;
-		} else if (progress === undefined) {
+		} else if (rawValue === undefined) {
 			tooltip = `${formattedDate}: no note`;
-		} else if (progress === null || progress === 0) {
+		} else if (rawValue === null || rawValue === 0) {
 			tooltip = `${formattedDate}: not tracked`;
 		} else if (isBooleanHabit) {
 			tooltip = `${formattedDate}: done`;
 		} else {
-			tooltip = `${formattedDate}: ${progress}%`;
+			const unitLabel = formatUnit(habit.unit, rawValue);
+			tooltip = `${formattedDate}: ${rawValue} ${unitLabel}`;
 		}
 		cell.setAttribute("aria-label", tooltip);
 		cell.setAttribute("title", tooltip);

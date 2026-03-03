@@ -78,6 +78,80 @@ export function getHabitProgress(
 }
 
 /**
+ * Get the raw tracked value for a habit on a specific date.
+ * Returns:
+ * - The numeric value if an entry exists
+ * - null if a daily note exists but has no entry for this habit
+ * - undefined if no daily note exists for this date
+ */
+export function getHabitRawValue(
+	allData: Map<string, DailyHabitData>,
+	habitName: string,
+	date: string,
+): number | null | undefined {
+	const dayData = allData.get(date);
+	if (!dayData) return undefined;
+
+	const entry = dayData.entries.find(e => e.habit === habitName);
+	if (!entry) return null;
+
+	return entry.value;
+}
+
+/** Total number of heatmap color levels */
+export const HEATMAP_LEVELS = 8;
+
+/** Levels reserved for values at or below the target */
+const LEVELS_AT_TARGET = 5;
+
+/** Levels reserved for values above the target */
+const LEVELS_ABOVE_TARGET = HEATMAP_LEVELS - LEVELS_AT_TARGET; // 3
+
+/** Fixed over-target thresholds (multiples of target): 1.5x and 2x */
+const OVER_TARGET_THRESHOLD_MID = 1.5;
+const OVER_TARGET_THRESHOLD_HIGH = 2.0;
+
+/**
+ * Map a raw value to a heatmap level (1–8).
+ *
+ * Two modes depending on whether the peak exceeds 2x the target:
+ *
+ * **Fixed mode** (peak <= 2x target):
+ *   - Levels 1–5: value / target, split into 5 equal buckets
+ *   - Level 6: above target, up to 1.5x target
+ *   - Level 7: 1.5x to 2x target
+ *   - Level 8: above 2x target (rarely reached in this mode)
+ *
+ * **Stretched mode** (peak > 2x target):
+ *   - All 8 levels distribute evenly across [0, peak]
+ *
+ * Returns 0 if value is 0.
+ */
+export function valueToLevel(value: number, peakValue: number, target: number): number {
+	if (value <= 0 || peakValue <= 0) return 0;
+
+	const stretchThreshold = target * OVER_TARGET_THRESHOLD_HIGH;
+
+	if (peakValue > stretchThreshold) {
+		// Stretched mode: all 8 levels across [0, peak]
+		const normalized = Math.min(value, peakValue) / peakValue;
+		return Math.min(HEATMAP_LEVELS, Math.max(1, Math.ceil(normalized * HEATMAP_LEVELS)));
+	}
+
+	// Fixed mode: levels 1-5 for [0, target], levels 6-8 for above target
+	if (value <= target) {
+		const normalized = value / target;
+		return Math.min(LEVELS_AT_TARGET, Math.max(1, Math.ceil(normalized * LEVELS_AT_TARGET)));
+	}
+
+	// Above target — fixed thresholds
+	const midBoundary = target * OVER_TARGET_THRESHOLD_MID;
+	if (value <= midBoundary) return LEVELS_AT_TARGET + 1; // level 6
+	if (value <= stretchThreshold) return LEVELS_AT_TARGET + 2; // level 7
+	return HEATMAP_LEVELS; // level 8
+}
+
+/**
  * Generate an array of ISO date strings for the last N days ending at `endDate`,
  * aligned to start on a Monday so the grid rows map to weekdays.
  */

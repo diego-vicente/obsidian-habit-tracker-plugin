@@ -748,34 +748,32 @@ button.habit-tracker-card-btn:active {
 	background: var(--background-modifier-border);
 }
 
-/* 10 accent color levels: 10% to 100% */
+/*
+ * 8 intensity levels.
+ * Fixed mode: levels 1-5 = at/below target, levels 6-8 = above target.
+ * Stretched mode (peak > 2x target): all 8 levels span [0, peak] evenly.
+ */
 .habit-tracker-heatmap-cell.level-1 {
-	background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-primary));
+	background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary));
 }
 .habit-tracker-heatmap-cell.level-2 {
-	background: color-mix(in srgb, var(--interactive-accent) 20%, var(--background-primary));
+	background: color-mix(in srgb, var(--interactive-accent) 25%, var(--background-primary));
 }
 .habit-tracker-heatmap-cell.level-3 {
-	background: color-mix(in srgb, var(--interactive-accent) 30%, var(--background-primary));
+	background: color-mix(in srgb, var(--interactive-accent) 37%, var(--background-primary));
 }
 .habit-tracker-heatmap-cell.level-4 {
-	background: color-mix(in srgb, var(--interactive-accent) 40%, var(--background-primary));
-}
-.habit-tracker-heatmap-cell.level-5 {
 	background: color-mix(in srgb, var(--interactive-accent) 50%, var(--background-primary));
 }
+.habit-tracker-heatmap-cell.level-5 {
+	background: color-mix(in srgb, var(--interactive-accent) 62%, var(--background-primary));
+}
 .habit-tracker-heatmap-cell.level-6 {
-	background: color-mix(in srgb, var(--interactive-accent) 60%, var(--background-primary));
+	background: color-mix(in srgb, var(--interactive-accent) 75%, var(--background-primary));
 }
 .habit-tracker-heatmap-cell.level-7 {
-	background: color-mix(in srgb, var(--interactive-accent) 70%, var(--background-primary));
+	background: color-mix(in srgb, var(--interactive-accent) 87%, var(--background-primary));
 }
 .habit-tracker-heatmap-cell.level-8 {
-	background: color-mix(in srgb, var(--interactive-accent) 80%, var(--background-primary));
-}
-.habit-tracker-heatmap-cell.level-9 {
-	background: color-mix(in srgb, var(--interactive-accent) 90%, var(--background-primary));
-}
-.habit-tracker-heatmap-cell.level-10 {
 	background: var(--interactive-accent);
 }
