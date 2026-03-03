@@ -15,11 +15,22 @@
    View toggle toolbar
    ============================================================ */
 
+/* Top spacer preserves room for the code block "show source" button */
+.habit-tracker-top-spacer {
+	height: 20px;
+}
+
+/* Footer: summary left, view toggle right */
+.habit-tracker-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-top: 10px;
+}
+
 .habit-tracker-toolbar {
 	display: flex;
-	justify-content: flex-end;
 	gap: 4px;
-	margin-bottom: 10px;
 }
 
 .habit-tracker-view-btn {
@@ -174,14 +185,19 @@
 }
 
 /* ============================================================
-   Compact view: two-column card grid
+   Compact view: 6-column card grid
+   The grid uses 6 columns as a common denominator so spans
+   can represent thirds (2/6), halves (3/6), two-thirds (4/6),
+   and full width (6/6).
    ============================================================ */
 
 .habit-tracker-grid {
 	display: grid;
-	grid-template-columns: 1fr 1fr;
+	grid-template-columns: repeat(6, 1fr);
 	gap: 6px;
 }
+
+
 
 .habit-tracker-card {
 	--progress: 0%;
@@ -204,6 +220,8 @@
 	min-height: 48px;
 }
 
+
+
 .habit-tracker-card:hover {
 	border-color: var(--interactive-accent);
 }
@@ -211,10 +229,6 @@
 .habit-tracker-card.completed {
 	--fill-opacity: 0.25;
 	border-color: color-mix(in srgb, var(--fill-color) 30%, transparent);
-}
-
-.habit-tracker-card.full-width {
-	grid-column: 1 / -1;
 }
 
 .habit-tracker-card.dragging {
@@ -282,40 +296,42 @@
 	vertical-align: middle;
 }
 
-/* Card right side: controls */
+/* Card right side: controls (stacked vertically) */
 .habit-tracker-card-controls {
 	display: flex;
+	flex-direction: column;
 	align-items: center;
-	gap: 4px;
+	gap: 2px;
 	flex-shrink: 0;
 	margin-left: 8px;
 }
 
-.habit-tracker-card-btn {
+button.habit-tracker-card-btn {
+	all: unset;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	box-sizing: border-box;
 	width: 24px;
-	height: 24px;
-	padding: 0;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: 4px;
-	background: var(--background-secondary);
-	color: var(--text-normal);
-	font-size: 0.9em;
+	height: 18px;
+	border: 1px solid var(--checkbox-border-color, var(--color-base-40));
+	border-radius: 3px;
+	color: var(--checkbox-border-color, var(--color-base-40));
+	font-size: 0.8em;
 	font-weight: 600;
 	cursor: pointer;
 	line-height: 1;
-	transition: background-color 0.1s ease;
+	transition: border-color 0.15s ease, color 0.15s ease;
 }
 
-.habit-tracker-card-btn:hover {
-	background: var(--background-modifier-hover);
+button.habit-tracker-card-btn:hover {
+	border-color: var(--text-muted);
+	color: var(--text-muted);
 }
 
-.habit-tracker-card-btn:active {
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
+button.habit-tracker-card-btn:active {
+	border-color: var(--interactive-accent);
+	color: var(--interactive-accent);
 }
 
 /* ============================================================
@@ -439,7 +455,6 @@
    ============================================================ */
 
 .habit-tracker-summary {
-	padding: 8px 0 0 0;
 	font-size: 0.9em;
 }
 
@@ -562,6 +577,31 @@
 	margin-bottom: 16px;
 }
 
+/* Column header row */
+.section-editor-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 0 8px 4px 8px;
+}
+
+.section-editor-header > span:first-child {
+	/* Spacer matching the move-button column width */
+	width: 22px;
+	flex-shrink: 0;
+}
+
+.section-editor-col-label {
+	font-size: 0.75em;
+	color: var(--text-faint);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+.section-editor-col-label:first-of-type {
+	flex: 1;
+}
+
 .section-editor-item {
 	display: flex;
 	align-items: center;
@@ -616,22 +656,18 @@
 	color: var(--text-normal);
 }
 
-/* Full-width toggle */
-.section-editor-toggle {
+/* Span selector */
+.section-editor-span {
 	flex-shrink: 0;
 }
 
-.section-editor-toggle-label {
-	display: flex;
-	align-items: center;
-	gap: 6px;
+.section-editor-span-select {
 	font-size: 0.85em;
-	color: var(--text-muted);
-	cursor: pointer;
-}
-
-.section-editor-toggle-label input[type="checkbox"] {
-	accent-color: var(--interactive-accent);
+	padding: 2px 4px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-normal);
 	cursor: pointer;
 }
 
@@ -649,6 +685,8 @@
 	display: flex;
 	flex-direction: column;
 	gap: 16px;
+	width: 100%;
+	overflow: hidden;
 }
 
 .habit-tracker-heatmap-loading {

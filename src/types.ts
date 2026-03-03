@@ -23,8 +23,16 @@ export interface HabitMeta {
 	unit: UnitLabel;
 	/** Optional grouping section (e.g. "Self-improvement", "Home") */
 	section: string;
-	/** Whether this habit should span the full grid width in compact view */
-	fullWidth: boolean;
+	/**
+	 * Number of grid columns this card should span in compact view (desktop).
+	 * 1 = single cell (default), 1.5 = half row, 2 = two-thirds, "full" = entire row.
+	 * Stored as a number; the special value SPAN_FULL (-1) means span all columns.
+	 */
+	span: number;
+	/**
+	 * Column span override for mobile. If null, falls back to `span`.
+	 */
+	spanMobile: number | null;
 }
 
 /**
@@ -82,6 +90,32 @@ export function formatUnit(unit: UnitLabel, value: number): string {
 
 /** An empty unit label, used when no unit is specified */
 export const EMPTY_UNIT: UnitLabel = { singular: "", plural: "" };
+
+/** Default span: card occupies ~1/3 of the row */
+export const SPAN_DEFAULT = 1;
+
+/** Half-row span */
+export const SPAN_HALF = 1.5;
+
+/** Special span value meaning "span the entire row" */
+export const SPAN_FULL = -1;
+
+/**
+ * Number of underlying CSS grid columns.
+ * Using 6 allows clean representation of thirds (2), halves (3),
+ * two-thirds (4), and full (6).
+ */
+export const GRID_COLUMNS = 6;
+
+/**
+ * Convert a logical span value to the number of CSS grid columns.
+ */
+export function spanToGridColumns(span: number): number {
+	if (span === SPAN_FULL) return GRID_COLUMNS;
+	if (span === SPAN_HALF) return GRID_COLUMNS / 2; // 3
+	// span 1 → 2 columns, span 2 → 4 columns
+	return Math.min(GRID_COLUMNS, span * 2);
+}
 
 /** Identifier for the code block language registered with Obsidian */
 export const CODE_BLOCK_LANGUAGE = "dvicente-habit-tracker";

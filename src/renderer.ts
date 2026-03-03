@@ -1,6 +1,6 @@
-import { App, MarkdownView, TFile, setIcon } from "obsidian";
+import { App, MarkdownView, Platform, TFile, setIcon } from "obsidian";
 import type { HabitMeta, HabitEntry, DailyHabitData } from "./types";
-import { formatUnit } from "./types";
+import { formatUnit, SPAN_DEFAULT, SPAN_FULL, GRID_COLUMNS, spanToGridColumns } from "./types";
 import type { HabitTrackerSettings } from "./settings";
 import { findEntry, upsertEntry } from "./parser";
 import { discoverHabits, getActiveHabits, groupBySection } from "./habits";
@@ -39,16 +39,20 @@ export function renderHabitTracker(
 		return;
 	}
 
-	// -- View toggle --
+	// -- Layout: top spacer, content, then footer (summary + view toggle) --
 	let currentMode: ViewMode = "compact";
-	const toolbar = el.createDiv({ cls: "habit-tracker-toolbar" });
+	el.createDiv({ cls: "habit-tracker-top-spacer" });
 	const contentArea = el.createDiv({ cls: "habit-tracker-content" });
+
+	const footer = el.createDiv({ cls: "habit-tracker-footer" });
+	const summarySlot = footer.createDiv({ cls: "habit-tracker-summary" });
+	const toolbar = footer.createDiv({ cls: "habit-tracker-toolbar" });
 
 	const compactBtn = toolbar.createEl("button", {
 		cls: "habit-tracker-view-btn active",
 		attr: { "aria-label": "Compact view" },
 	});
-	setIcon(compactBtn.createSpan(), "grid-2x2");
+	setIcon(compactBtn.createSpan(), "layout-grid");
 
 	const detailedBtn = toolbar.createEl("button", {
 		cls: "habit-tracker-view-btn",
@@ -58,12 +62,13 @@ export function renderHabitTracker(
 
 	const renderContent = () => {
 		contentArea.empty();
+		summarySlot.empty();
 		if (currentMode === "compact") {
 			renderCompactView(contentArea, activeHabits, data, app, file);
 		} else {
 			renderHeatmapView(contentArea, activeHabits, data, app, settings);
 		}
-		renderSummary(contentArea, activeHabits, data);
+		renderSummary(summarySlot, activeHabits, data);
 	};
 
 	compactBtn.addEventListener("click", () => {
@@ -114,6 +119,30 @@ function renderCompactView(
 	}
 }
 
+/**
+ * Resolve the effective span for a habit, considering platform.
+ * On mobile, uses `spanMobile` if set, otherwise falls back to `span`.
+ */
+function resolveSpan(habit: HabitMeta): number {
+	if (Platform.isMobile && habit.spanMobile !== null) {
+		return habit.spanMobile;
+	}
+	return habit.span;
+}
+
+/**
+ * Apply a span value to a card element via CSS grid-column.
+ * Converts the logical span to the number of underlying 6-column grid cells.
+ */
+function applySpan(card: HTMLElement, span: number): void {
+	if (span === SPAN_FULL) {
+		card.style.gridColumn = "1 / -1";
+	} else {
+		const cols = spanToGridColumns(span);
+		card.style.gridColumn = `span ${cols}`;
+	}
+}
+
 function renderCard(
 	container: HTMLElement,
 	habit: HabitMeta,
@@ -131,8 +160,9 @@ function renderCard(
 		: Math.min(MAX_PROGRESS_PERCENT, Math.round((currentValue / habit.target) * MAX_PROGRESS_PERCENT));
 
 	const card = container.createDiv({
-		cls: `habit-tracker-card${isCompleted ? " completed" : ""}${habit.fullWidth ? " full-width" : ""}`,
+		cls: `habit-tracker-card${isCompleted ? " completed" : ""}`,
 	});
+	applySpan(card, resolveSpan(habit));
 	card.style.setProperty("--progress", `${progressPercent}%`);
 
 	// -- Left side: name + progress label --
@@ -184,15 +214,15 @@ function renderCard(
 			}, app, file);
 		});
 	} else {
-		const minusBtn = controlsEl.createEl("button", {
-			text: "\u2212",
-			cls: "habit-tracker-card-btn",
-			attr: { "aria-label": "Decrease value" },
-		});
 		const plusBtn = controlsEl.createEl("button", {
 			text: "+",
 			cls: "habit-tracker-card-btn",
 			attr: { "aria-label": "Increase value" },
+		});
+		const minusBtn = controlsEl.createEl("button", {
+			text: "\u2212",
+			cls: "habit-tracker-card-btn",
+			attr: { "aria-label": "Decrease value" },
 		});
 
 		const updateValue = async (delta: number, e: Event) => {
@@ -315,6 +345,11 @@ function setupDragToAdjust(
 const HEATMAP_LEVELS = 10;
 const DAYS_PER_WEEK = 7;
 
+/** Cell size (12px) + gap (2px) = pixels per grid column */
+const CELL_SIZE_WITH_GAP = 14;
+/** Fallback width when container measurement is unavailable */
+const FALLBACK_HEATMAP_WIDTH = 700;
+
 function renderHeatmapView(
 	container: HTMLElement,
 	activeHabits: HabitMeta[],
@@ -328,8 +363,25 @@ function renderHeatmapView(
 
 	scanHistory(app, settings.dailyNotesFolder).then((allData) => {
 		wrapper.empty();
-		for (const habit of activeHabits) {
-			renderHabitHeatmap(wrapper, habit, allData, data.date, app, settings);
+
+		// Measure actual container width to determine how many columns fit
+		const containerWidth = wrapper.clientWidth || FALLBACK_HEATMAP_WIDTH;
+		const maxColumns = Math.floor(containerWidth / CELL_SIZE_WITH_GAP);
+
+		const sections = groupBySection(app, activeHabits);
+		const showSectionHeaders = sections.size > 1;
+
+		for (const [sectionName, habits] of sections) {
+			const sectionEl = wrapper.createDiv({ cls: "habit-tracker-section" });
+
+			if (showSectionHeaders) {
+				renderSectionHeader(sectionEl, sectionName, habits, data, app, null);
+			}
+
+			const heatmapList = sectionEl.createDiv({ cls: "habit-tracker-list" });
+			for (const habit of habits) {
+				renderHabitHeatmap(heatmapList, habit, allData, data.date, app, settings, maxColumns);
+			}
 		}
 	});
 }
@@ -341,6 +393,7 @@ function renderHabitHeatmap(
 	currentDate: string,
 	app: App,
 	settings: HabitTrackerSettings,
+	maxColumns: number,
 ): void {
 	const block = container.createDiv({ cls: "habit-tracker-heatmap-block" });
 
@@ -354,13 +407,6 @@ function renderHabitHeatmap(
 		e.preventDefault();
 		app.workspace.openLinkText(habit.name, habit.filePath);
 	});
-
-	// Compute how many columns fit. We use a fixed estimate since we
-	// don't know the container width at render time. Obsidian note width
-	// is typically ~700px; with 12px cells + 2px gap = 14px per column.
-	const CELL_SIZE_WITH_GAP = 14;
-	const ESTIMATED_WIDTH = 700;
-	const maxColumns = Math.floor(ESTIMATED_WIDTH / CELL_SIZE_WITH_GAP);
 
 	const dates = generateDateRange(currentDate, maxColumns);
 	const today = toISODate(new Date());
@@ -557,13 +603,12 @@ function renderCollapsedSummary(container: HTMLElement, progress: SectionProgres
 	labelEl.appendText(` ${progress.completedCount}/${progress.totalCount} completed`);
 }
 
-function renderSummary(el: HTMLElement, activeHabits: HabitMeta[], data: DailyHabitData): void {
+function renderSummary(container: HTMLElement, activeHabits: HabitMeta[], data: DailyHabitData): void {
 	const completedCount = activeHabits.filter(h => findEntry(data, h.name)?.completed === true).length;
 	const totalCount = activeHabits.length;
 	const allDone = completedCount === totalCount;
 
-	const summary = el.createDiv({ cls: "habit-tracker-summary" });
-	const statusEl = summary.createEl("span", {
+	const statusEl = container.createEl("span", {
 		cls: `habit-tracker-status${allDone ? " all-done" : ""}`,
 	});
 	if (allDone) {

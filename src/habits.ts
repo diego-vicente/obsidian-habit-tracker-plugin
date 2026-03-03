@@ -1,6 +1,6 @@
 import { App, TFile } from "obsidian";
 import type { HabitMeta } from "./types";
-import { HABIT_TYPE_LINK, EMPTY_UNIT, parseUnit } from "./types";
+import { HABIT_TYPE_LINK, EMPTY_UNIT, parseUnit, SPAN_DEFAULT, SPAN_HALF, SPAN_FULL } from "./types";
 
 /** Default section name for habits without an explicit section */
 const DEFAULT_SECTION = "Other";
@@ -61,7 +61,34 @@ export function groupBySection(app: App, habits: HabitMeta[]): Map<string, Habit
 		}
 	}
 
-	return groups;
+	// Sort sections by `habit_section_sorting` from their note frontmatter
+	const sortedEntries = Array.from(groups.entries()).sort(([a], [b]) => {
+		const sortA = readSectionSorting(app, a);
+		const sortB = readSectionSorting(app, b);
+		return sortA - sortB;
+	});
+
+	return new Map(sortedEntries);
+}
+
+/** Fallback sorting value for sections without `habit_section_sorting` */
+const DEFAULT_SECTION_SORTING = Infinity;
+
+/** Frontmatter key used to define section display order */
+const SECTION_SORTING_KEY = "habit_section_sorting";
+
+/**
+ * Read the `habit_section_sorting` value from a section note's frontmatter.
+ * Returns the numeric value, or Infinity if not set (sorts to the end).
+ */
+function readSectionSorting(app: App, sectionName: string): number {
+	const file = resolveSectionFile(app, sectionName);
+	if (!file) return DEFAULT_SECTION_SORTING;
+
+	const cache = app.metadataCache.getFileCache(file);
+	const value = cache?.frontmatter?.[SECTION_SORTING_KEY];
+
+	return typeof value === "number" ? value : DEFAULT_SECTION_SORTING;
 }
 
 /**
@@ -144,7 +171,8 @@ function extractHabitMeta(app: App, file: TFile): HabitMeta | null {
 	const target = typeof fm["target"] === "number" ? fm["target"] : 1;
 	const unit = typeof fm["unit"] === "string" ? parseUnit(fm["unit"]) : EMPTY_UNIT;
 	const section = typeof fm["section"] === "string" ? fm["section"] : DEFAULT_SECTION;
-	const fullWidth = fm["full_width"] === true;
+	const span = parseSpan(fm["span"], fm["full_width"]);
+	const spanMobile = parseSpanMobile(fm["span_mobile"]);
 
 	// Derive the display name from the filename (strip .md extension)
 	const name = file.basename;
@@ -157,8 +185,38 @@ function extractHabitMeta(app: App, file: TFile): HabitMeta | null {
 		target,
 		unit,
 		section,
-		fullWidth,
+		span,
+		spanMobile,
 	};
+}
+
+/**
+ * Parse the `span` frontmatter value into a numeric span.
+ * Accepts a number (1, 2, 3…) or the string "full".
+ * Falls back to `full_width: true` → SPAN_FULL for backward compatibility.
+ * Returns SPAN_DEFAULT (1) if neither is set.
+ */
+function parseSpan(spanValue: unknown, fullWidthValue: unknown): number {
+	if (spanValue === "full") return SPAN_FULL;
+	if (spanValue === "half") return SPAN_HALF;
+	if (typeof spanValue === "number" && spanValue >= SPAN_DEFAULT) return spanValue;
+
+	// Backward compatibility: full_width: true → full span
+	if (fullWidthValue === true) return SPAN_FULL;
+
+	return SPAN_DEFAULT;
+}
+
+/**
+ * Parse the optional `span_mobile` frontmatter value.
+ * Returns null if not set (falls back to desktop span at render time).
+ */
+function parseSpanMobile(value: unknown): number | null {
+	if (value === undefined || value === null) return null;
+	if (value === "full") return SPAN_FULL;
+	if (value === "half") return SPAN_HALF;
+	if (typeof value === "number" && value >= SPAN_DEFAULT) return value;
+	return null;
 }
 
 /**

@@ -1,19 +1,38 @@
 import { App, Modal, TFile, setIcon } from "obsidian";
 import type { HabitMeta } from "./types";
+import { SPAN_DEFAULT, SPAN_HALF, SPAN_FULL } from "./types";
 import { resolveSectionFile } from "./habits";
 
 interface HabitDisplayConfig {
 	name: string;
 	filePath: string;
-	fullWidth: boolean;
+	span: number;
+	spanMobile: number | null;
 }
+
+/** Sentinel value for the mobile selector meaning "same as desktop" */
+const INHERIT_SENTINEL = -999;
+
+/** Options for the span selectors */
+const SPAN_OPTIONS: { value: number; label: string }[] = [
+	{ value: SPAN_DEFAULT, label: "1 col" },
+	{ value: SPAN_HALF, label: "Half" },
+	{ value: 2, label: "2 col" },
+	{ value: SPAN_FULL, label: "Full" },
+];
+
+/** Options for the mobile span selector (includes "inherit" option) */
+const MOBILE_SPAN_OPTIONS: { value: number; label: string }[] = [
+	{ value: INHERIT_SENTINEL, label: "—" },
+	...SPAN_OPTIONS,
+];
 
 /**
  * Modal to edit the order and display settings of habits within a section.
  * - Reorder habits via up/down buttons
- * - Toggle full_width per habit
+ * - Set column span per habit for desktop and mobile
  * - Saves `order` list to the section note's frontmatter
- * - Saves `full_width` to each habit note's frontmatter
+ * - Saves `span` and `span_mobile` to each habit note's frontmatter
  */
 export class SectionEditorModal extends Modal {
 	private sectionName: string;
@@ -28,7 +47,8 @@ export class SectionEditorModal extends Modal {
 		this.items = habits.map(h => ({
 			name: h.name,
 			filePath: h.filePath,
-			fullWidth: h.fullWidth,
+			span: h.span,
+			spanMobile: h.spanMobile,
 		}));
 	}
 
@@ -42,7 +62,7 @@ export class SectionEditorModal extends Modal {
 
 		// Instructions
 		contentEl.createEl("p", {
-			text: "Reorder habits and toggle full-width display.",
+			text: "Reorder habits and set column span. Mobile defaults to desktop if set to \u2014.",
 			cls: "section-editor-hint",
 		});
 
@@ -70,6 +90,13 @@ export class SectionEditorModal extends Modal {
 	private renderList(): void {
 		if (!this.listEl) return;
 		this.listEl.empty();
+
+		// Column headers
+		const headerRow = this.listEl.createDiv({ cls: "section-editor-header" });
+		headerRow.createEl("span"); // spacer for move buttons
+		headerRow.createEl("span", { text: "Habit", cls: "section-editor-col-label" });
+		headerRow.createEl("span", { text: "Desktop", cls: "section-editor-col-label" });
+		headerRow.createEl("span", { text: "Mobile", cls: "section-editor-col-label" });
 
 		for (let i = 0; i < this.items.length; i++) {
 			const item = this.items[i];
@@ -114,17 +141,51 @@ export class SectionEditorModal extends Modal {
 		// Habit name
 		row.createEl("span", { text: item.name, cls: "section-editor-name" });
 
-		// Full-width toggle
-		const toggleCol = row.createDiv({ cls: "section-editor-toggle" });
-		const toggleLabel = toggleCol.createEl("label", { cls: "section-editor-toggle-label" });
+		// Desktop span selector
+		row.appendChild(this.createSpanSelect(
+			SPAN_OPTIONS,
+			item.span,
+			(val) => { item.span = val; },
+			"Desktop span",
+		));
 
-		const checkbox = toggleLabel.createEl("input", { type: "checkbox" });
-		(checkbox as HTMLInputElement).checked = item.fullWidth;
-		checkbox.addEventListener("change", () => {
-			item.fullWidth = (checkbox as HTMLInputElement).checked;
+		// Mobile span selector
+		const mobileValue = item.spanMobile ?? INHERIT_SENTINEL;
+		row.appendChild(this.createSpanSelect(
+			MOBILE_SPAN_OPTIONS,
+			mobileValue,
+			(val) => { item.spanMobile = val === INHERIT_SENTINEL ? null : val; },
+			"Mobile span",
+		));
+	}
+
+	private createSpanSelect(
+		options: { value: number; label: string }[],
+		currentValue: number,
+		onChange: (val: number) => void,
+		ariaLabel: string,
+	): HTMLElement {
+		const wrapper = createDiv({ cls: "section-editor-span" });
+		const select = wrapper.createEl("select", {
+			cls: "section-editor-span-select",
+			attr: { "aria-label": ariaLabel },
 		});
 
-		toggleLabel.createEl("span", { text: "Full width" });
+		for (const opt of options) {
+			const option = select.createEl("option", {
+				text: opt.label,
+				attr: { value: String(opt.value) },
+			});
+			if (opt.value === currentValue) {
+				(option as HTMLOptionElement).selected = true;
+			}
+		}
+
+		select.addEventListener("change", () => {
+			onChange(parseFloat(select.value));
+		});
+
+		return wrapper;
 	}
 
 	private swap(indexA: number, indexB: number): void {
@@ -140,9 +201,9 @@ export class SectionEditorModal extends Modal {
 		// 1. Write `order` to the section note
 		await this.saveOrderToSection();
 
-		// 2. Write `full_width` to each habit note
+		// 2. Write `span` and `span_mobile` to each habit note
 		for (const item of this.items) {
-			await this.saveFullWidthToHabit(item);
+			await this.saveSpanToHabit(item);
 		}
 	}
 
@@ -154,14 +215,24 @@ export class SectionEditorModal extends Modal {
 		await this.updateFrontmatterProperty(file, "order", order);
 	}
 
-	private async saveFullWidthToHabit(item: HabitDisplayConfig): Promise<void> {
+	private async saveSpanToHabit(item: HabitDisplayConfig): Promise<void> {
 		const abstractFile = this.app.vault.getAbstractFileByPath(item.filePath);
 		if (!(abstractFile instanceof TFile)) return;
 
-		if (item.fullWidth) {
-			await this.updateFrontmatterProperty(abstractFile, "full_width", true);
-		} else {
+		// Desktop span
+		if (item.span === SPAN_DEFAULT) {
+			await this.removeFrontmatterProperty(abstractFile, "span");
 			await this.removeFrontmatterProperty(abstractFile, "full_width");
+		} else {
+			await this.updateFrontmatterProperty(abstractFile, "span", serializeSpan(item.span));
+			await this.removeFrontmatterProperty(abstractFile, "full_width");
+		}
+
+		// Mobile span
+		if (item.spanMobile === null) {
+			await this.removeFrontmatterProperty(abstractFile, "span_mobile");
+		} else {
+			await this.updateFrontmatterProperty(abstractFile, "span_mobile", serializeSpan(item.spanMobile));
 		}
 	}
 
@@ -190,6 +261,15 @@ export class SectionEditorModal extends Modal {
 			delete fm[key];
 		});
 	}
+}
+
+/**
+ * Convert a numeric span value to its frontmatter representation.
+ */
+function serializeSpan(span: number): string | number {
+	if (span === SPAN_FULL) return "full";
+	if (span === SPAN_HALF) return "half";
+	return span;
 }
 
 const WIKI_LINK_DISPLAY = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/;
