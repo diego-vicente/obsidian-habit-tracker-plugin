@@ -227,3 +227,51 @@ function isHabitType(typeValue: unknown): boolean {
 	if (typeof typeValue !== "string") return false;
 	return typeValue === HABIT_TYPE_LINK || typeValue === "Habit";
 }
+
+/**
+ * Determine the context in which a code block is embedded.
+ * - "habit": the file is a Habit note → show heatmap for this habit
+ * - "section": the file is a section note (has `habit_section_sorting` or `order`) → show section heatmaps
+ * - "daily": the file is a daily note or anything else → show the full daily tracker
+ */
+export type BlockContext =
+	| { kind: "daily" }
+	| { kind: "habit"; habit: HabitMeta }
+	| { kind: "section"; sectionName: string; habits: HabitMeta[] };
+
+export function detectBlockContext(app: App, file: TFile | null): BlockContext {
+	if (!file) return { kind: "daily" };
+
+	const cache = app.metadataCache.getFileCache(file);
+	const fm = cache?.frontmatter;
+
+	// Check if this note is a Habit note
+	if (fm && isHabitType(fm["type"])) {
+		const habit = extractHabitMeta(app, file);
+		if (habit) return { kind: "habit", habit };
+	}
+
+	// Check if this note is a section note (has habit_section_sorting or order)
+	if (fm && (typeof fm[SECTION_SORTING_KEY] === "number" || Array.isArray(fm["order"]))) {
+		const sectionName = `[[${file.basename}]]`;
+		const allHabits = discoverHabits(app);
+		const sectionHabits = allHabits.filter(h => {
+			// Match both "[[Name]]" and plain "Name" section references
+			const match = h.section.match(WIKI_LINK_PATTERN);
+			const plainSection = match ? (match[1] ?? h.section) : h.section;
+			return plainSection === file.basename || h.section === sectionName;
+		});
+
+		// Sort by the section's order list
+		const order = readSectionOrder(app, sectionName);
+		if (order.length > 0) {
+			sortByOrder(sectionHabits, order);
+		}
+
+		if (sectionHabits.length > 0) {
+			return { kind: "section", sectionName, habits: sectionHabits };
+		}
+	}
+
+	return { kind: "daily" };
+}

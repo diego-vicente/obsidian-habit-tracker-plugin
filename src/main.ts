@@ -2,8 +2,8 @@ import { MarkdownPostProcessorContext, Plugin, TFile } from "obsidian";
 import { DEFAULT_SETTINGS, HabitTrackerSettings, HabitTrackerSettingTab } from "./settings";
 import { CODE_BLOCK_LANGUAGE } from "./types";
 import { parseDailyHabitData, createEmptyDailyData } from "./parser";
-import { extractDateFromFilename } from "./habits";
-import { renderHabitTracker } from "./renderer";
+import { extractDateFromFilename, detectBlockContext } from "./habits";
+import { renderHabitTracker, renderHabitNoteView, renderSectionNoteView } from "./renderer";
 
 export default class HabitTrackerPlugin extends Plugin {
 	settings: HabitTrackerSettings;
@@ -48,12 +48,24 @@ export default class HabitTrackerPlugin extends Plugin {
 		ctx: MarkdownPostProcessorContext,
 	): void {
 		const file = this.resolveSourceFile(ctx);
-		const date = this.resolveDateFromContext(ctx, file);
+		const context = detectBlockContext(this.app, file);
 
-		// Parse existing data, or create empty data for this date
-		const data = parseDailyHabitData(source) ?? createEmptyDailyData(date);
+		switch (context.kind) {
+			case "habit":
+				renderHabitNoteView(el, context.habit, this.app, this.settings);
+				break;
 
-		renderHabitTracker(data, el, this.app, file, this.settings);
+			case "section":
+				renderSectionNoteView(el, context.sectionName, context.habits, this.app, this.settings);
+				break;
+
+			case "daily": {
+				const date = this.resolveDateFromContext(ctx, file);
+				const data = parseDailyHabitData(source) ?? createEmptyDailyData(date);
+				renderHabitTracker(data, el, this.app, file, this.settings);
+				break;
+			}
+		}
 	}
 
 	/**

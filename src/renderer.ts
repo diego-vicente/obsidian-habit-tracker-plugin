@@ -90,6 +90,72 @@ export function renderHabitTracker(
 	renderContent();
 }
 
+/**
+ * Render a heatmap for a single habit inside a habit note.
+ */
+export function renderHabitNoteView(
+	el: HTMLElement,
+	habit: HabitMeta,
+	app: App,
+	settings: HabitTrackerSettings,
+): void {
+	el.empty();
+	el.addClass("habit-tracker");
+
+	const wrapper = el.createDiv({ cls: "habit-tracker-heatmap-view" });
+	wrapper.createEl("p", { text: "Loading history\u2026", cls: "habit-tracker-heatmap-loading" });
+
+	const today = toISODate(new Date());
+
+	scanHistory(app, settings.dailyNotesFolder).then((allData) => {
+		wrapper.empty();
+
+		const containerWidth = wrapper.clientWidth || FALLBACK_HEATMAP_WIDTH;
+		const maxColumns = Math.floor(containerWidth / CELL_SIZE_WITH_GAP);
+
+		const HIDE_NAME = false;
+		renderHabitHeatmap(wrapper, habit, allData, today, app, settings, maxColumns, HIDE_NAME);
+	});
+}
+
+/**
+ * Render heatmaps for all habits in a section, inside a section note.
+ */
+export function renderSectionNoteView(
+	el: HTMLElement,
+	sectionName: string,
+	habits: HabitMeta[],
+	app: App,
+	settings: HabitTrackerSettings,
+): void {
+	el.empty();
+	el.addClass("habit-tracker");
+
+	if (habits.length === 0) {
+		const emptyMsg = el.createDiv({ cls: "habit-tracker-empty" });
+		emptyMsg.createEl("p", {
+			text: "No habits found for this section.",
+		});
+		return;
+	}
+
+	const wrapper = el.createDiv({ cls: "habit-tracker-heatmap-view" });
+	wrapper.createEl("p", { text: "Loading history\u2026", cls: "habit-tracker-heatmap-loading" });
+
+	const today = toISODate(new Date());
+
+	scanHistory(app, settings.dailyNotesFolder).then((allData) => {
+		wrapper.empty();
+
+		const containerWidth = wrapper.clientWidth || FALLBACK_HEATMAP_WIDTH;
+		const maxColumns = Math.floor(containerWidth / CELL_SIZE_WITH_GAP);
+
+		for (const habit of habits) {
+			renderHabitHeatmap(wrapper, habit, allData, today, app, settings, maxColumns);
+		}
+	});
+}
+
 // ============================================================
 // Compact view (chips)
 // ============================================================
@@ -392,19 +458,22 @@ function renderHabitHeatmap(
 	app: App,
 	settings: HabitTrackerSettings,
 	maxColumns: number,
+	showName = true,
 ): void {
 	const block = container.createDiv({ cls: "habit-tracker-heatmap-block" });
 
-	// Habit name as link
-	const nameLink = block.createEl("a", {
-		text: habit.name,
-		cls: "habit-tracker-heatmap-name internal-link",
-		attr: { "data-href": habit.name },
-	});
-	nameLink.addEventListener("click", (e) => {
-		e.preventDefault();
-		app.workspace.openLinkText(habit.name, habit.filePath);
-	});
+	// Habit name as link (skip when embedded in the habit's own note)
+	if (showName) {
+		const nameLink = block.createEl("a", {
+			text: habit.name,
+			cls: "habit-tracker-heatmap-name internal-link",
+			attr: { "data-href": habit.name },
+		});
+		nameLink.addEventListener("click", (e) => {
+			e.preventDefault();
+			app.workspace.openLinkText(habit.name, habit.filePath);
+		});
+	}
 
 	const dates = generateDateRange(currentDate, maxColumns);
 	const today = toISODate(new Date());
